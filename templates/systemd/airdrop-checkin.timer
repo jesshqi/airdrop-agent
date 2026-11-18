@@ -1,0 +1,10 @@
+[Unit]
+Description=Run airdrop check-in daily ~07:10 WIB with jitter
+
+[Timer]
+OnCalendar=*-*-* 00:10:00 UTC
+RandomizedDelaySec=1800
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,20 @@
+[Unit]
+Description=Airdrop agent radar (Telegram listener + X poll)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=airdrop
+WorkingDirectory=/home/airdrop/.hermes/skills/crypto/airdrop-agent
+ExecStart=/home/airdrop/.hermes/skills/crypto/airdrop-agent/.venv/bin/python scripts/radar/radar_runner.py run
+Restart=on-failure
+RestartSec=60
+# Environment=RADAR_TG_SYNC=0
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/airdrop/.airdrop-agent
+
+[Install]
+WantedBy=multi-user.target
