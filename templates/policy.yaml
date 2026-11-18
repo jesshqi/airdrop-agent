@@ -1,0 +1,75 @@
+# ~/.airdrop-agent/policy.yaml — hard limits enforced by safe_send.py / siwe_sign.py
+mainnet_requires_gate: true        # any mainnet tx -> human approval
+allow_deploy_on_testnet: true      # contract deploy on testnet without gate
+chains:
+  sepolia:
+    chain_id: 11155111
+    rpc_env: RPC_SEPOLIA
+    testnet: true
+    native: ETH
+    explorer: https://sepolia.etherscan.io
+    max_tx_native: 0.05
+    max_daily_native: 0.3
+    max_gas_native: 0.01
+  base-sepolia:
+    chain_id: 84532
+    rpc_env: RPC_BASE_SEPOLIA
+    testnet: true
+    native: ETH
+    explorer: https://sepolia.basescan.org
+    max_tx_native: 0.05
+    max_daily_native: 0.3
+    max_gas_native: 0.005
+  arbitrum-sepolia:
+    chain_id: 421614
+    rpc_env: RPC_ARB_SEPOLIA
+    testnet: true
+    native: ETH
+    explorer: https://sepolia.arbiscan.io
+    max_tx_native: 0.05
+    max_daily_native: 0.3
+    max_gas_native: 0.005
+  # Mainnet example (every tx gated). Keep caps tiny.
+  base:
+    chain_id: 8453
+    rpc: https://mainnet.base.org
+    testnet: false
+    native: ETH
+    explorer: https://basescan.org
+    max_tx_native: 0.002
+    max_daily_native: 0.005
+    max_gas_native: 0.0005
+
+# Contracts the agent may call without a gate (verify each address from OFFICIAL docs).
+contracts_allowlist:
+  sepolia: []
+  base-sepolia: []
+  arbitrum-sepolia: []
+  base: []
+
+# Never send here (known drainers / scam addresses you collect)
+blocklist: []
+
+# SIWE sign-in allowed only for these domains (subdomains included)
+siwe_domain_allowlist:
+  - galxe.com
+  - zealy.io
+  - layer3.xyz
+  - questn.com
+  - intract.io
+  - guild.xyz
+
+# ---------------------------------------------------------------------------------------------------------
+# RISK mode (scripts/core/risk_mode.py). OFF by default. When ON: no approval codes, BUT only these caps apply
+# and only these burner labels may act. A chain missing here = no automatic tx on it (normal gate).
+# Hard blocks (KILL, eth_sign/blind hash, unlimited approvals, mainnet Permit/Permit2/Seaport, scam_check != ok,
+# SIWE origin mismatch, blocklist) are NEVER bypassed. Toggle: risk_mode.py on|off, Telegram "/risk on|off".
+risk_on:
+  max_hours: 24                    # auto-revert to OFF after N hours (0 = never; not recommended)
+  wallet_labels: [main-burner]     # burner labels only — your main wallet must never be in the vault
+  auto_allowlist_domains: true     # new domain auto-allowlisted only if scam_check verdict == ok
+  chains:                          # separate (usually smaller on mainnet) caps used ONLY in risk mode
+    sepolia:          {max_tx_native: 0.05,   max_daily_native: 0.5,   max_gas_native: 0.01}
+    base-sepolia:     {max_tx_native: 0.05,   max_daily_native: 0.5,   max_gas_native: 0.005}
+    arbitrum-sepolia: {max_tx_native: 0.05,   max_daily_native: 0.5,   max_gas_native: 0.005}
+    base:             {max_tx_native: 0.0005, max_daily_native: 0.002, max_gas_native: 0.0003}

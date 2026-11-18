@@ -1,0 +1,18 @@
+# crontab -e   (as user "airdrop"). Times in server TZ; set TZ=Asia/Jakarta on the VPS.
+SKILL=/home/airdrop/.hermes/skills/crypto/airdrop-agent
+PY=/home/airdrop/.hermes/skills/crypto/airdrop-agent/.venv/bin/python
+# Daily check-in 07:10 WIB (+ runner adds random 0-25 min jitter)
+10 7 * * *  cd $SKILL && $PY scripts/core/checkin_runner.py >> /home/airdrop/.airdrop-agent/logs/cron.log 2>&1
+# Faucets every 12h for the example project
+20 */12 * * * cd $SKILL && $PY scripts/testnet/faucet_claim.py --project example-testnet >> /home/airdrop/.airdrop-agent/logs/cron.log 2>&1
+# Evening balance report 21:00 WIB
+0 21 * * *  cd $SKILL && $PY scripts/wallet/wallet_balance.py --all | $PY scripts/core/report_telegram.py - --plain >/dev/null 2>&1
+# Discord user-mode poll (ONLY if opted in)
+# */15 * * * * cd $SKILL && $PY scripts/discord/discord_watch.py user --once >/dev/null 2>&1
+# Radar without pm2: one X poll + TG backfill every 30 min (use EITHER this OR pm2/systemd airdrop-radar, not both)
+# */30 * * * * cd $SKILL && $PY scripts/radar/radar_runner.py once >> /home/airdrop/.airdrop-agent/logs/radar.log 2>&1
+# */10 * * * * cd $SKILL && $PY scripts/radar/radar_runner.py exec >> /home/airdrop/.airdrop-agent/logs/radar.log 2>&1
+# Daily TG join of new radar targets (cap/day in radar_sources.yaml)
+# 15 9 * * *  cd $SKILL && $PY scripts/radar/tg_radar.py join >> /home/airdrop/.airdrop-agent/logs/radar.log 2>&1
+# Telegram approvals + "/risk on|off" (ONLY if the report bot is not polled by another bot)
+# */2 * * * * cd $SKILL && $PY scripts/core/task_queue.py sync >/dev/null 2>&1

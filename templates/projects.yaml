@@ -1,0 +1,73 @@
+# ~/.airdrop-agent/projects.yaml — one entry per garapan. Import: task_queue.py import ~/.airdrop-agent/projects.yaml
+projects:
+  - id: example-testnet
+    name: Example Testnet (generic)
+    status: active                # active | paused | done
+    score: 72                     # from research_score.py
+    chain: sepolia
+    wallet_label: main-burner
+    links:
+      official: https://example.org
+      docs: https://docs.example.org
+      x: https://x.com/example
+      discord: https://discord.gg/example
+    notes: "Points program, no token yet. Never use links from DMs."
+
+    steps:
+      - key: research
+        type: research
+        params: {url: "https://example.org", official: "example.org"}
+      - key: join-tg
+        type: telegram
+        params: {action: join, peer: "@example_announcements"}
+      - key: faucet
+        type: faucet
+        repeat: daily
+      - key: daily-tx
+        type: tx
+        repeat: daily
+        params: {chain: sepolia, txs: 2}
+      - key: deploy-counter
+        type: deploy
+        params: {chain: sepolia, foundry_project: "~/contracts/counter"}
+      - key: mint-testnet-nft
+        type: tx
+        gate: true                # new contract -> human approval
+        params: {chain: sepolia, to: "0x0000000000000000000000000000000000000000", sig: "mint(uint256)", args: ["1"]}
+      - key: galxe-quest
+        type: web
+        params: {steps: "~/.airdrop-agent/quests/example_galxe.yaml"}
+      - key: discord-role
+        type: manual
+        params: {note: "Verify role via Collab.Land in browser profile (human)"}
+
+    faucets:
+      - name: example-http-faucet
+        type: http
+        url: https://faucet.example.org/api/claim
+        method: POST
+        json: {address: "${ADDRESS}", network: "sepolia"}
+        cooldown_hours: 24
+      - name: example-manual-faucet
+        type: manual
+        url: https://faucet.example.org
+        requires: [github, captcha]
+        cooldown_hours: 24
+
+    checkin:
+      type: web
+      steps: ~/.airdrop-agent/quests/example_checkin.yaml
+
+  - id: example-tg-miniapp
+    name: Example TG Mini App
+    status: paused
+    score: 55
+    wallet_label: main-burner
+    steps:
+      - key: start-bot
+        type: telegram
+        params: {action: start, peer: "@ExampleBot", ref: "REFCODE"}
+    checkin:
+      type: telegram
+      bot: "@ExampleBot"
+      click: "Daily"

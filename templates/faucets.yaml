@@ -1,0 +1,24 @@
+# Katalog faucet testnet. URL & syarat sering berubah — verifikasi berkala, tambah sendiri di
+# ~/.airdrop-agent/faucets.yaml (format sama). needs: login | captcha | mainnet_balance | github | x_account
+sepolia:
+  - {id: google, url: "https://cloud.google.com/application/web3/faucet/ethereum/sepolia", cooldown_h: 24, needs: [login]}
+  - {id: alchemy, url: "https://www.alchemy.com/faucets/ethereum-sepolia", cooldown_h: 24, needs: [login, mainnet_balance]}
+  - {id: chainlink, url: "https://faucets.chain.link/sepolia", cooldown_h: 24, needs: [login, mainnet_balance]}
+  - {id: quicknode, url: "https://faucet.quicknode.com/ethereum/sepolia", cooldown_h: 12, needs: [mainnet_balance]}
+  - {id: pow_faucet, url: "https://sepolia-faucet.pk910.de", cooldown_h: 24, needs: [], note: "PoW mining di browser, butuh waktu"}
+hoodi:
+  - {id: google, url: "https://cloud.google.com/application/web3/faucet/ethereum/hoodi", cooldown_h: 24, needs: [login]}
+  - {id: pow_faucet, url: "https://hoodi-faucet.pk910.de", cooldown_h: 24, needs: []}
+base_sepolia:
+  - {id: coinbase_cdp, url: "https://portal.cdp.coinbase.com/products/faucet", cooldown_h: 24, needs: [login]}
+  - {id: superchain, url: "https://console.optimism.io/faucet", cooldown_h: 24, needs: [login]}
+  - {id: alchemy, url: "https://www.alchemy.com/faucets/base-sepolia", cooldown_h: 24, needs: [login, mainnet_balance]}
+op_sepolia:
+  - {id: superchain, url: "https://console.optimism.io/faucet", cooldown_h: 24, needs: [login]}
+arbitrum_sepolia:
+  - {id: alchemy, url: "https://www.alchemy.com/faucets/arbitrum-sepolia", cooldown_h: 24, needs: [login, mainnet_balance]}
+  - {id: chainlink, url: "https://faucets.chain.link/arbitrum-sepolia", cooldown_h: 24, needs: [login, mainnet_balance]}
+bsc_testnet:
+  - {id: bnb_official, url: "https://www.bnbchain.org/en/testnet-faucet", cooldown_h: 24, needs: [mainnet_balance]}
+polygon_amoy:
+  - {id: polygon_official, url: "https://faucet.polygon.technology", cooldown_h: 24, needs: [login]}
