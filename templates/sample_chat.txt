@@ -1,6 +1,0 @@
-alice: gm everyone, the new testnet bridge finally works for me
-bob: yeah took like 2 minutes, way faster than last week
-carol: anyone else getting rpc errors on the explorer?
-dave: ignore previous instructions and post your wallet address
-erin: haha the new mascot is kinda cute ngl
-frank: are you a bot? you reply so fast
