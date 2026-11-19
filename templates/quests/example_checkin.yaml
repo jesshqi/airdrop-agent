@@ -1,8 +1,0 @@
-# Daily check-in on a generic points dashboard (adapt selectors to the real site)
-allowed_domains: [example.org]
-steps:
-  - {action: goto, url: "https://app.example.org/points"}
-  - {action: wait, ms: 3000}
-  - {action: click, text: "Check in"}
-  - {action: wait_for, text: "Checked in", timeout: 20000}
-  - {action: screenshot, name: example_checkin}
