@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "airdrop-agent": {
+      "command": "/ABSOLUTE/PATH/TO/airdrop-agent/.venv/bin/python",
+      "args": ["-m", "aa.mcp.server"],
+      "env": {
+        "AIRDROP_HOME": "/Users/YOU/.airdrop-agent",
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  }
+}
