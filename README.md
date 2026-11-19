@@ -1,112 +1,350 @@
-# 🪂 airdrop-agent v0.3
+[![ci](https://github.com/setyamickala/airdrop-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/setyamickala/airdrop-agent/actions/workflows/ci.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
+[![python](https://img.shields.io/badge/python-3.10%2B-black.svg)](pyproject.toml)
 
-Skill untuk **Hermes Agent** (juga Muse & agent lain yang membaca `SKILL.md`): agent yang menggarap
-airdrop memakai identitasnya sendiri (wallet burner, email, Telegram, Discord, browser), dengan rem
-keamanan supaya dana dan akun utama tetap aman.
+# airdrop-agent
 
-> Paket ini **tidak berisi key/token asli**. Semua secret kamu isi sendiri di `~/.airdrop-agent/.env`.
+**A local operator for the work that happens before a token exists.** Identities, wallets, social
+accounts, quests, testnets and waitlists — driven by one CLI and one policy engine, with an MCP
+surface for other agents.
 
-> **Adapted copy:** original skill by Setya Mickala (MIT License, see LICENSE). Owner references were generalized ("the owner") for public reuse; no functional changes. If you fork this, keep the copyright notice.
+No server. No telemetry. SQLite plus an encrypted vault in `~/.airdrop-agent`.
 
-## Fitur
+> **Adapted copy:** upstream skill by the airdrop-agent contributors (MIT License, see LICENSE), version 4.1.0. Owner references were generalized for public reuse; no functional changes. If you fork this, keep the copyright notice.
 
-| Kemampuan | Script | Catatan keamanan |
+```
+aa quest probe https://app.example.com/points   # read the page, don't guess
+aa quest run dow-points --identity main        # run it inside policy
+aa cf assist --identity main                   # one visible click when a challenge wins
+aa autopilot tick                              # radar → warm → daily → quests → faucet
+```
+
+> New in 4.1 — clearance stored per host and user agent, one persistent browser profile per identity,
+> encrypted session restore, quest login pre-flight, nineteen tested targets. Full manual:
+> [docs/GUIDE.md](docs/GUIDE.md). New here? Read [docs/INTRO.md](docs/INTRO.md).
+
+## Contents
+
+- [What an airdrop agent is](#what-an-airdrop-agent-is)
+- [What this one does](#what-this-one-does)
+- [Why it is built this way](#why-it-is-built-this-way)
+- [Architecture](#architecture)
+- [Install](#install)
+- [Sixty-second start](#sixty-second-start)
+- [Quests](#quests)
+- [Testnets and sending](#testnets-and-sending)
+- [Cloudflare and sessions](#cloudflare-and-sessions)
+- [Wallets and identities](#wallets-and-identities)
+- [Social and email](#social-and-email)
+- [Autopilot](#autopilot)
+- [Approvals and the kill switch](#approvals-and-the-kill-switch)
+- [Other surfaces](#other-surfaces)
+- [Docs](#docs)
+- [Limits](#limits)
+- [Contributing](#contributing)
+
+## What an airdrop agent is
+
+Airdrops pay after the fact. You use a testnet, hold points, fill a waitlist, keep a streak for
+months — and a snapshot decides later whether any of it was worth anything. The work is repetitive,
+time-windowed, spread over many accounts, and easy to get wrong at the exact moment it matters: one
+wrong signature and a wallet is empty.
+
+An airdrop agent is the operations layer for that work. Not a macro that clicks one button — a
+system that holds the whole loop:
+
+| layer | question it answers |
+|---|---|
+| identity graph | who is acting: persona, email, proxy, socials, browser fingerprint |
+| custody | which wallet, which key, what is the value ceiling |
+| browser | how to reach the page and stay logged in |
+| executor | what the task actually is, step by step |
+| policy | may this fire without a human, and for how much |
+| ledger | proof it happened: screenshot, hash, run row |
+
+Three loops run on top: **acquire** (radar finds candidates), **execute** (quests, faucets, forms,
+social actions), **maintain** (warm sessions, keep streaks, respect cooldowns, skip what is done).
+
+The difference between an agent and a pile of scripts is the last two layers. Without policy, an
+agent can drain a wallet. Without a ledger, it can only claim it worked.
+
+**What it is not:** a profit guarantee, a token picker, a sybil antidote, a botnet, or a replacement
+for judgement. A quiz answer, a deposit size and a fresh signature still need a human.
+
+## What this one does
+
+| capability | command surface | behaviour |
 |---|---|---|
-| Wallet sendiri (EVM + Solana) | `wallet/wallet_create.py`, `wallet_balance.py` | keystore terenkripsi, hanya alamat yang dicetak |
-| Kirim tx / kontrak | `wallet/safe_send.py` | simulasi, cap per-tx/harian/gas, allowlist, unlimited approve ditolak, gate |
-| Sign SIWE / typed data | `wallet/siwe_sign.py`, `wallet/sign_guard.py` | domain = origin + allowlist; Permit/Permit2/Seaport diblok |
-| Email sendiri | `email/imap_otp.py` | ambil OTP/link, domain link dicek |
-| Telegram | `telegram/tg_tasks.py` | Telethon, FloodWait ditangani, URL mini app tidak dicetak |
-| Quest web (steps) | `web/web_quest.py` | allowlist domain, captcha → kamu (VNC), popup wallet tidak auto-confirm |
-| Browser agent + wallet ter-inject | `web/browser_session.py` + `wallet_provider.js` | semua request wallet lewat guard; API lokal ber-token |
-| Anti-phishing & riset | `web/scam_check.py`, `web/research_score.py` | lookalike, punycode, umur domain, kata drainer |
-| Discord pantau pengumuman | `discord/discord_watch.py` | bot resmi via Follow channel (ToS-safe) |
-| **Discord grind role chat** | `discord/chat_grinder.py` | **opt-in, melanggar ToS**, rem anti-spam, auto-pause |
-| Faucet & testnet | `testnet/faucet_claim.py`, `testnet_daily.py`, `deploy_contract.py` | katalog faucet, captcha tidak di-bypass |
-| Antrean & otomasi | `core/task_queue.py`, `core/checkin_runner.py` | retry, proof, streak, approval kode via Telegram |
-| Laporan | `core/report_telegram.py` | ke forum topic, otomatis disensor |
-| **Radar TG + X** | `radar/tg_radar.py`, `x_radar.py`, `pipeline.py`, `radar_runner.py` | join/listen channel, poll X API, dedupe, scam_check + skor, task `pending_approval` + digest berkode |
-| **RISK mode ON/OFF** | `core/risk_mode.py`, `/risk on\|off` | ON = auto tanpa approval dalam cap `risk_on`; hard block tetap; tiap aksi dilapor |
-| Kill switch | `~/.airdrop-agent/KILL` | semua script berhenti |
+| mass identities and wallets | `aa identity new --wallets N`, `aa wallet new --count`, `aa identity clone` | one 24-word seed per identity, BIP44 EVM + Solana, labels scoped per identity |
+| quests | `aa quest probe / import / validate / run` | YAML DSL, human-speed steps, proof per step, parks instead of faking |
+| testnets | `aa testnet faucets / claim / deploy / campaign` | faucet catalog, cooldowns, counter/ERC20/ERC721 deploys |
+| guarded sends | `aa wallet send`, `aa wallet approve` | simulate → cap → gate → sign → broadcast → receipt |
+| Cloudflare | `aa cf status / assist / clear` | clearance cache bound to host + UA, native Turnstile, provider token, FlareSolverr |
+| sessions that hold | `aa session status / check / warm / save / restore` | one profile per identity, encrypted state mirror, pre-flight parking |
+| social | `aa tg`, `aa x`, `aa dc` | MTProto joins, browser follow/like/repost/post, humanised Discord chat |
+| own mail | `aa email add / otp / link` | IMAP OTP and verification links, Gmail login assist |
+| discovery | `aa radar add / scan / latest` | TG/X/web sources, drainer check, scored queue with reasons |
+| daily routine | `aa daily plan / run` | idempotent check-ins, streak ledger, cooldowns |
+| autonomy | `aa autopilot tick / daemon` | ordered modules, budgets, active hours, service templates |
+| agent access | `aa mcp serve` | 21 stdio JSON-RPC tools, same policy engine |
 
-## Struktur
+Every command returns one envelope:
+
+```json
+{"ok": true, "ts": "…", "data": {"parked": true, "needs_login": "x", "proof": ["…"]},
+ "error": null, "next": ["aa social login x --identity id-z4yrky"]}
+```
+
+Exit codes are part of the contract: `0` ok, `2` denied, `3` failed, `10` approval gate, `99` kill.
+A host branches on those, never on prose.
+
+## Why it is built this way
+
+**One door.** The CLI is the only entry point for shell, cron, autopilot and MCP. Policy is checked
+by the caller *and* again inside the library, so a clever host cannot skip a cap.
+
+**Ask once, then run.** Risk is a decision, not a dialog. A mode sets how far the agent may go alone;
+above that line the exact payload is frozen behind a hash and a one-time code on your Telegram.
+
+**Park, never fake.** A captcha, a login wall, an unknown field, a wallet gate — the run stops with a
+screenshot and one `next` command. A parked quest is not a failed quest and autopilot leaves it alone
+for six hours.
+
+**Durable by structure, not retries.** Clearance is treated as an IP-bound credential and reused.
+Login is treated as state: one profile, one proxy, warm-up, encrypted mirror. Two problems that
+normally eat a farm are removed at the design level instead of being re-tried in a loop.
+
+**Local custody.** Keys are decrypted in-process and handed to the browser through a binding; the
+page only ever sees a provider. The vault is AES-256-GCM with scrypt and AAD, logs redact literal
+secrets, `.env` is `0600`.
+
+## Architecture
 
 ```
-airdrop-agent/
-├── README.md · SKILL.md · LICENSE · install.sh · requirements.txt
-├── references/
-│   ├── workflows/            00-onboarding … 09-radar (mermaid)
-│   ├── architecture.md  setup-vps.md  security.md  sybil-tos.md  troubleshooting.md
-│   └── wallet · email · telegram · web-quests · discord · discord-role-grind · research
-│       testnet · daily-checkin · autonomous-execution · reporting · radar · risk-mode (.md)
-├── scripts/
-│   ├── core/  wallet/  email/  telegram/  discord/  web/  testnet/  radar/
-└── templates/  env.example · policy.yaml · projects.yaml · discord_servers.yaml · faucets.yaml · radar_sources.yaml
-                sample_chat.txt · sample_radar_posts.txt · quests/ · crontab.txt · ecosystem.config.js · systemd/ · hermes-cron-jobs.md
+caller (shell · MCP · cron · agent)
+        │
+        ▼
+      aa/cli.py ──► envelope: ok · denied · gate · kill
+        │
+        ├── policy.py    mode, caps, domain + contract allowlists, drainer verdict
+        ├── gates.py     payload hash, single-use code, TTL
+        ├── guard.py     KILL file, exit 99 everywhere
+        ├── vault.py     AES-256-GCM + scrypt, AAD-bound
+        ├── chains.py    RPC with chain-id verification
+        ├── browser/     stealth engine, provider injection, captcha, cf.py
+        ├── session.py   profile reuse, warm-up, encrypted storage_state
+        ├── wallet/      hd, evm, sol, sign, send, extensions
+        ├── quest/       YAML DSL, runner, adapters
+        ├── testnet/     faucets, deploys, campaigns
+        ├── radar/       sources, extract, score, pipeline
+        └── daily.py · autopilot.py
 ```
+
+State: `~/.airdrop-agent` — `policy.yaml`, `autopilot.yaml`, `.env` (0600), `data/state.sqlite3`,
+`vault/`, `browser/<identity>/`, `proofs/`. Move it with `AIRDROP_HOME`.
 
 ## Install
 
-### Hermes Agent (VPS Ubuntu)
+macOS or Linux, Python 3.10+ (3.12 recommended), Chromium installed by the script.
+
 ```bash
-sudo adduser --disabled-password airdrop && sudo -iu airdrop
-mkdir -p ~/.hermes/skills/crypto
-unzip airdrop-agent-v3.zip -d ~/.hermes/skills/crypto/          # → ~/.hermes/skills/crypto/airdrop-agent/
-cd ~/.hermes/skills/crypto/airdrop-agent
-bash install.sh                    # tambah --with-selfbot kalau mau chat_grinder Discord
-nano ~/.airdrop-agent/.env         # isi sendiri, jangan lewat chat
-.venv/bin/python scripts/core/selfcheck.py
-hermes skills list | grep airdrop-agent
+git clone https://github.com/setyamickala/airdrop-agent.git
+cd airdrop-agent
+./install.sh              # venv, deps, chromium
+# ./install.sh --full     # adds Foundry for contract deploys
+# ./install.sh --no-browser
+./install.sh --service=systemd   # or =launchd
+aa init && aa doctor
 ```
-Aktifkan toolset: `hermes tools` → `terminal`, `file`, `skills` (+ `browser`, `web`, `cronjob`).
 
-### Muse / agent lain
-Salin folder `airdrop-agent/` ke direktori skill agent tersebut (mis. `~/.claude/skills/`, `~/.agents/skills/`),
-atau tempel isi `SKILL.md` ke instruksi agent dan beri akses shell ke folder ini. Script tidak bergantung pada Hermes.
+`aa init` generates `VAULT_PASSWORD` in `.env` (mode 0600) and copies `policy.yaml`,
+`autopilot.yaml` and the quest examples. `aa doctor` must be green before funded work. No desktop?
+Set `BROWSER_HEADLESS=1` and optionally `FLARESOLVERR_URL` — see [docs/CLOUDFLARE.md](docs/CLOUDFLARE.md).
 
-## Konfigurasi (`~/.airdrop-agent/`)
-| File | Isi |
+## Sixty-second start
+
+```bash
+aa identity new main --wallets 2
+aa email add --identity main --address you@yourdomain.tld --password '…'
+aa social login x --identity main --user you --password '…' --totp 'JBSWY…'
+aa session warm --identity main
+aa cf assist --identity main --url https://app.dowprotocol.com/points
+aa quest import config/quests/dow-points.yaml
+aa quest validate dow-points
+aa quest run dow-points --identity main --dry
+aa quest run dow-points --identity main
+```
+
+`--dry` lists resolved steps without touching the page. A real run writes proof to
+`~/.airdrop-agent/proofs/`, and either finishes or parks with the exact command to continue.
+
+## Quests
+
+```bash
+aa quest probe https://app.example.com/tasks --identity main   # fields, buttons, challenge state
+aa quest import my-quest.yaml
+aa quest validate my-quest
+aa quest run my-quest --identity main --dry
+aa quest run my-quest --identity main
+```
+
+```yaml
+id: demo-daily
+name: Demo daily
+url: https://app.example.com/tasks
+chain: base-sepolia
+cooldown_hours: 24
+steps:
+  - goto: "{{url}}"
+  - dismiss: true
+  - wallet: {connect: true}
+  - click: "Check in"
+  - assert_text: "Checked in"
+  - screenshot: done
+  - manual: "answer the quiz if it opens"
+```
+
+Nineteen validated quests ship in [`config/quests/`](config/quests/): points programs (DOW, Ammora,
+vAPI, Qyro, Syqora, Bullgem, Dogeos, KieDex), testnets (Nilly, Stabilizer, Flint, Whisk, Ducat,
+Polyester, Tzero, Folesterol) and waitlists (Oripa, Code Kitty, ZkUnnamed). Each records where it
+stops — [docs/TARGETS.md](docs/TARGETS.md). Schema and every action:
+[docs/QUESTS.md](docs/QUESTS.md).
+
+## Testnets and sending
+
+```bash
+aa testnet faucets --chain base-sepolia
+aa testnet claim --chain base-sepolia --identity main
+aa testnet deploy --chain sepolia --identity main --kind erc721
+aa wallet send --chain sepolia --identity main --to 0x… --amount 0.01
+aa wallet send --chain sepolia --identity main --to 0x… --amount 0.01 --broadcast
+```
+
+Sends are dry by default. Order is policy → simulation → gas cap → optional gate → sign →
+broadcast. A revert costs nothing and creates no gate.
+
+## Cloudflare and sessions
+
+```bash
+aa cf status
+aa cf assist --identity main --url https://app.example.com/points
+aa session status --identity main
+aa session warm --identity main
+aa session save --identity main
+aa session restore --identity main
+```
+
+Clearance is cached per identity + host with its user agent, `CF_TTL_MINUTES` (45), and injected
+before navigation. When it is missing: 28 s of real interaction, then a provider token with
+`action`/`cdata`, then FlareSolverr, then one visible assist click. A proxy change invalidates
+clearance — one identity, one residential proxy.
+
+Sessions are logged-in state, not hope: the profile is reused by every module, its `storage_state`
+is sealed in the vault on close and restored on start. Quests pre-flight social steps and park with
+`needs_login` instead of half-finishing. Details:
+[docs/CLOUDFLARE.md](docs/CLOUDFLARE.md), [docs/SESSIONS.md](docs/SESSIONS.md).
+
+## Wallets and identities
+
+```bash
+aa identity new solo --persona casual-id --proxy http://user:pass@host:port --wallets 2
+aa identity clone solo farm2 --wallets 2
+aa wallet new --identity solo --count 10
+aa wallet balance --identity solo --chain base-sepolia
+aa wallet export --identity solo
+aa wallet sign --identity solo --label first --message "gm"
+```
+
+One seed per identity, `m/44'/60'/0'/0/i` for EVM and `m/44'/501'/i'/0'` for Solana. The seed never
+prints; `aa vault export --password '…'` is the surviving backup and prints a SHA-256.
+
+## Social and email
+
+```bash
+aa tg login --identity solo --phone +62…      # real account via MTProto
+aa tg join --identity solo @channel
+aa x follow --identity solo @project
+aa dc login --identity solo --user … --password …
+aa dc grind --identity solo --server project --minutes 30
+aa email otp --identity solo --sender noreply@project.xyz
+```
+
+Discord uses the browser's user token (self-bot, ToS-grey), so chat is opt-in and humanised. Reads
+on X can use free syndication; writes go through the browser.
+
+## Autopilot
+
+```bash
+aa autopilot plan
+aa autopilot tick
+aa autopilot daemon
+```
+
+Order: radar → auto-follow → warm → daily → quest → faucet. Each module has an interval and a daily
+budget counted from events; `active_hours` silences the night. `tick` is the safe unit, `daemon` is
+a foreground loop under the service templates.
+
+## Approvals and the kill switch
+
+Modes: `safe` (everything gates), `balanced` (default: testnet inside caps is automatic, mainnet and
+permits gate), `turbo` (wide caps and clean-domain auto-allow). Gates freeze chain, recipient,
+amount, calldata and origin; approve once with the Telegram code:
+
+```bash
+aa gate list
+aa gate approve 3 K7F2Q9
+```
+
+Re-run the exact command. Any changed field changes the hash. `aa kill "reason"` stops everything
+with exit 99 until `aa unkill`.
+
+## Other surfaces
+
+```bash
+aa browser --identity solo --url https://app.example.com --headful
+aa ext install rabby --identity solo
+aa radar scan
+aa daily run --identity solo
+aa mcp serve          # stdio JSON-RPC, 21 tools
+aa events --limit 50
+```
+
+Host adapters for Hermes, Muse, OpenClaw and Claude live in [`agents/`](agents/README.md).
+[AGENTS.md](AGENTS.md) is the router, [SKILL.md](SKILL.md) the deep skill.
+
+## Docs
+
+| start | depth |
 |---|---|
-| `.env` | VAULT_PASSWORD, bot laporan (token, chat_id, topic_id), Telegram API, IMAP, RPC, Discord, LLM grinder |
-| `policy.yaml` | chain + RPC + cap, allowlist kontrak, blocklist, allowlist domain SIWE/connect |
-| `projects.yaml` | garapan: steps, faucets, checkin, links resmi |
-| `discord_servers.yaml` | server grind: channel, target role/level, jam aktif WIB, cap, persona, aturan |
-| `faucets.yaml` | katalog faucet publik |
-| `radar_sources.yaml` | target TG/X, query, keyword, min_score, cap join/follow/baca, template task |
-| `policy.yaml → risk_on` | cap terpisah + label burner untuk RISK=ON |
+| [INTRO](docs/INTRO.md) | the two design rules, where to begin |
+| [GUIDE](docs/GUIDE.md) | full manual, install to recovery |
+| [CAPABILITIES](docs/CAPABILITIES.md) | requirement → command → limit |
+| [TARGETS](docs/TARGETS.md) | the nineteen tested sites |
+| [QUESTS](docs/QUESTS.md) | DSL, actions, parking, maintenance |
+| [SAFETY](docs/SAFETY.md) · [SYBIL](docs/SYBIL.md) | caps, gates, drainers, persona hygiene |
+| [ARCHITECTURE](docs/ARCHITECTURE.md) | module map and invariants |
+| [OPERATIONS](docs/OPERATIONS.md) · [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) | services, backups, symptoms |
+| [CLOUDFLARE](docs/CLOUDFLARE.md) · [SESSIONS](docs/SESSIONS.md) | the two durability layers |
+| [MCP](docs/MCP.md) · [PORTABILITY](docs/PORTABILITY.md) | agent wiring |
 
-## Pemakaian harian
-```bash
-PY=.venv/bin/python
-$PY scripts/core/task_queue.py next                 # ambil task berikutnya
-$PY scripts/core/task_queue.py list                 # status + proof
-$PY scripts/core/checkin_runner.py --dry-run        # cek check-in
-$PY scripts/wallet/wallet_balance.py --all          # saldo burner
-$PY scripts/core/task_queue.py gates                # approval yang menunggu
-$PY scripts/core/task_queue.py approve 12 A1B2C3    # kode dari Telegram
-.venv-selfbot/bin/python scripts/discord/chat_grinder.py status
-$PY scripts/radar/radar_runner.py dry-run          # uji radar offline (sandbox)
-$PY scripts/radar/radar_runner.py status           # ringkasan radar
-$PY scripts/core/risk_mode.py status               # RISK mode (on --hours 6 / off)
-touch ~/.airdrop-agent/KILL                          # darurat
-```
-Di chat Hermes: *"garap project example-testnet sesuai skill airdrop-agent, berhenti di setiap gate"*.
-Jadwal otomatis: `templates/hermes-cron-jobs.md`, `crontab.txt`, `ecosystem.config.js` (pm2), atau `systemd/`.
+## Limits
 
-## Keamanan singkat
-- User Linux terpisah, seed utama tidak pernah di VPS, `.env` 600, vault 700, VNC hanya lewat SSH tunnel.
-- Semua output ke LLM disensor (key, mnemonic, token). Konten web/Telegram/Discord/email = tidak tepercaya.
-- Gate approval terikat hash payload + kode yang hanya dikirim ke Telegram.
-- **RISK mode default OFF.** ON = tanpa approval (dalam cap `risk_on`, burner saja); hard block tidak pernah dilewati.
-  Baca `references/risk-mode.md` sebelum menyalakan.
-- Radar: biaya X API pay-per-use, follow API = Enterprise only, browser follow opt-in (ToS), join TG dibatasi.
-  Baca `references/radar.md`.
-- Multi-akun bisa membuat semua akun didiskualifikasi; automasi akun Discord/Telegram berisiko ban.
-  Baca `references/security.md` dan `references/sybil-tos.md`.
+- Turnstile without a provider key or FlareSolverr ends in a manual assist. That is the design, not a bug.
+- Clearance is IP-bound; rotating proxies on one identity burns it repeatedly.
+- Selectors rot. `aa quest probe` is the maintenance tool, and proofs show the diff.
+- Points are not tokens. A completed quest is not an allocation.
+- Discord user tokens and multi-account farming are ToS-grey, not ToS-clean.
+- Gas is real on mainnet; keep farming wallets gas-only and sweep profits.
 
-## Kredit
-v0.3 = radar Telegram/X + RISK mode.
+Seven years of airdrop tooling have produced a lot of clickers. This is the other thing: an operator
+with a paper trail.
 
-v0.2 = paket `airdrop-agent` + bagian terbaik dari `airdrop-hunter` (wallet ter-inject + browser agent,
-analisis typed data, scam_check, katalog faucet, approval via balasan Telegram, frekuensi task fleksibel),
-dibangun ulang di atas vault, safe_send, gate berkode, kill switch, dan redaksi log.
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY.md) — never paste a
+private key, an address and tx hash are fine.
+
+## License
+
+MIT. No code vendored from other airdrop bots; the Cloudflare layer implements public browser and
+provider APIs independently.

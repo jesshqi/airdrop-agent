@@ -1,31 +1,97 @@
 #!/usr/bin/env bash
-# Install airdrop-agent on Ubuntu 22.04/24.04 as the dedicated user "airdrop". Safe to re-run.
-#   bash install.sh                 core (wallet, email, telegram, web, testnet, discord bot watcher)
-#   bash install.sh --with-selfbot  + separate venv .venv-selfbot for discord chat_grinder (opt-in, ToS risk)
+# airdrop-agent v4 installer — macOS + Linux. Non-interactive unless it must ask.
 set -euo pipefail
-SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
-AHOME="${AIRDROP_HOME:-$HOME/.airdrop-agent}"
 
-python3 -m venv "$SKILL_DIR/.venv"
-"$SKILL_DIR/.venv/bin/pip" install -q -U pip
-"$SKILL_DIR/.venv/bin/pip" install -q -r "$SKILL_DIR/requirements.txt"
-"$SKILL_DIR/.venv/bin/python" -m playwright install chromium || echo "!! playwright browser install failed; retry later"
-echo ">> once, with sudo: sudo $SKILL_DIR/.venv/bin/python -m playwright install-deps chromium"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FULL=0
+BROWSER=1
+SERVICE=""
+PY="${PYTHON:-python3}"
 
-if [[ "${1:-}" == "--with-selfbot" ]]; then
-  # discord.py-self and discord.py both install the 'discord' package -> must live in a separate venv
-  python3 -m venv "$SKILL_DIR/.venv-selfbot"
-  "$SKILL_DIR/.venv-selfbot/bin/pip" install -q -U pip
-  "$SKILL_DIR/.venv-selfbot/bin/pip" install -q pyyaml requests eth-account "discord.py-self>=2.0"
-  echo ">> selfbot venv ready: $SKILL_DIR/.venv-selfbot/bin/python scripts/discord/chat_grinder.py"
+usage() {
+  cat <<'EOF'
+usage: ./install.sh [--full] [--no-browser] [--service=systemd|launchd|none]
+
+  --full           install every optional extra (browser, solana, discord, dev)
+  --no-browser     skip the Chromium download
+  --service=X      register the autopilot service after install
+EOF
+}
+
+for arg in "$@"; do
+  case "$arg" in
+    --full) FULL=1 ;;
+    --no-browser) BROWSER=0 ;;
+    --service=*) SERVICE="${arg#*=}" ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "unknown flag: $arg"; usage; exit 2 ;;
+  esac
+done
+
+say() { printf '\033[1m→ %s\033[0m\n' "$*"; }
+die() { printf '\033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
+
+[ "$(uname -s)" = "Darwin" ] || [ "$(uname -s)" = "Linux" ] || die "only macOS and Linux are supported"
+command -v "$PY" >/dev/null || die "python3 not found"
+
+"$PY" - <<'EOF' || die "python 3.10+ required"
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 10) else 1)
+EOF
+
+say "creating venv (this stays local to $REPO)"
+"$PY" -m venv "$REPO/.venv"
+VPY="$REPO/.venv/bin/python"
+"$VPY" -m pip install -q --upgrade pip setuptools wheel
+[ "$FULL" = "1" ] && EXTRAS="[full,browser]" || { [ "$BROWSER" = "1" ] && EXTRAS="[browser]" || EXTRAS=""; }
+say "installing package + dependencies"
+"$VPY" -m pip install -q -e "$REPO$EXTRAS"
+
+if [ "$BROWSER" = "1" ]; then
+  say "downloading chromium"
+  "$VPY" -m playwright install chromium || die "browser download failed (rerun with --no-browser to skip)"
 fi
 
-mkdir -p "$AHOME"/{vault,data,proofs,logs,quests,browser}
-chmod 700 "$AHOME" "$AHOME/vault"
-[ -f "$AHOME/.env" ] || { cp "$SKILL_DIR/templates/env.example" "$AHOME/.env"; chmod 600 "$AHOME/.env"; }
-for f in policy.yaml projects.yaml discord_servers.yaml faucets.yaml radar_sources.yaml; do
-  [ -f "$AHOME/$f" ] || cp "$SKILL_DIR/templates/$f" "$AHOME/"
-done
-cp -n "$SKILL_DIR"/templates/quests/*.yaml "$AHOME/quests/" 2>/dev/null || true
-"$SKILL_DIR/.venv/bin/python" "$SKILL_DIR/scripts/core/task_queue.py" init
-echo ">> Edit $AHOME/.env yourself (nano), then: $SKILL_DIR/.venv/bin/python $SKILL_DIR/scripts/core/selfcheck.py"
+say "initialising ~/.airdrop-agent"
+AIRDROP_HOME="${AIRDROP_HOME:-$HOME/.airdrop-agent}" "$VPY" -m aa init --random-vault-password
+
+case "$SERVICE" in
+  systemd)
+    command -v systemctl >/dev/null || die "systemd not found"
+    UNIT="$HOME/.config/systemd/user/airdrop-agent.service"
+    mkdir -p "$(dirname "$UNIT")"
+    sed -e "s|__REPO__|$REPO|g" -e "s|__HOME__|$HOME|g" \
+      "$REPO/templates/systemd/airdrop-agent.service" > "$UNIT"
+    systemctl --user daemon-reload
+    systemctl --user enable --now airdrop-agent.service
+    say "systemd unit installed: $UNIT"
+    ;;
+  launchd)
+    [ "$(uname -s)" = "Darwin" ] || die "launchd is macOS only"
+    PLIST="$HOME/Library/LaunchAgents/com.airdrop-agent.plist"
+    mkdir -p "$(dirname "$PLIST")"
+    sed -e "s|__REPO__|$REPO|g" -e "s|__HOME__|$HOME|g" \
+      "$REPO/templates/launchd/com.airdrop-agent.plist" > "$PLIST"
+    launchctl unload "$PLIST" 2>/dev/null || true
+    launchctl load -w "$PLIST"
+    say "launchd agent installed: $PLIST"
+    ;;
+  ""|none) say "no service registered" ;;
+  *) die "unknown service: $SERVICE" ;;
+esac
+
+BIN_DIR="$HOME/.local/bin"
+mkdir -p "$BIN_DIR"
+ln -sf "$REPO/.venv/bin/aa" "$BIN_DIR/aa"
+say "linked $BIN_DIR/aa"
+
+cat <<EOF
+
+selesai. langkah berikutnya:
+  1. $EDITOR ~/.airdrop-agent/.env    (RPC, Telegram, email — lihat config/env.example)
+  2. $BIN_DIR/aa doctor
+  3. $BIN_DIR/aa identity new main --wallets 3
+  4. $BIN_DIR/aa mode balanced
+
+pastikan $BIN_DIR ada di PATH. backup frasa vault (~/.airdrop-agent/.env).
+EOF
